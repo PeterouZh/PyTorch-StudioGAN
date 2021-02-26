@@ -203,8 +203,8 @@ class Discriminator(nn.Module):
             elif self.conditional_strategy == 'ContraGAN++':
                 self.embedding = sn_embedding(num_classes, hypersphere_dim)
                 self.proj_head = snlinear(in_features=self.out_dims[-1], out_features=hypersphere_dim)
-                self.convert_head0 = snlinear(in_features=hypersphere_dim, out_features=bottlenect_dim)
-                self.convert_head1 = snlinear(in_features=bottlenect_dim, out_features=hypersphere_dim)
+                self.convert_head0 = snlinear(in_features=hypersphere_dim, out_features=bottleneck_dim)
+                self.convert_head1 = snlinear(in_features=bottleneck_dim, out_features=hypersphere_dim)
             elif self.conditional_strategy == 'ProjGAN':
                 self.embedding = sn_embedding(num_classes, self.out_dims[-1])
             elif self.conditional_strategy == 'ACGAN':
@@ -221,8 +221,8 @@ class Discriminator(nn.Module):
             elif self.conditional_strategy == 'ContraGAN++':
                 self.embedding = embedding(num_classes, hypersphere_dim)
                 self.proj_head = linear(in_features=self.out_dims[-1], out_features=hypersphere_dim)
-                self.convert_head0 = linear(in_features=hypersphere_dim, out_features=bottlenect_dim)
-                self.convert_head1 = linear(in_features=bottlenect_dim, out_features=hypersphere_dim)
+                self.convert_head0 = linear(in_features=hypersphere_dim, out_features=bottleneck_dim)
+                self.convert_head1 = linear(in_features=bottleneck_dim, out_features=hypersphere_dim)
             elif self.conditional_strategy == 'ProjGAN':
                 self.embedding = embedding(num_classes, self.out_dims[-1])
             elif self.conditional_strategy == 'ACGAN':

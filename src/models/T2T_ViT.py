@@ -370,7 +370,7 @@ class T2T_module(nn.Module):
 
 class Discriminator(nn.Module):
     def __init__(self, dataset, img_size, batch_size, tokens_type, token_dim, num_classes, embed_dim, depth, num_heads, mlp_ratio,
-                 hypersphere_dim, bottlenect_dim, normalize_embed, qkv_bias, qk_scale, activation_fn, conditional_strategy, drop_rate,
+                 hypersphere_dim, bottleneck_dim, normalize_embed, qkv_bias, qk_scale, activation_fn, conditional_strategy, drop_rate,
                  attn_drop_rate, drop_path_rate, d_spectral_norm, initialize, mixed_precision):
         super().__init__()
         self.dataset = dataset
@@ -425,8 +425,8 @@ class Discriminator(nn.Module):
             elif self.conditional_strategy == 'ContraGAN++':
                 self.embedding = sn_embedding(num_classes, hypersphere_dim)
                 self.proj_head = snlinear(in_features=embed_dim, out_features=hypersphere_dim)
-                self.convert_head0 = snlinear(in_features=hypersphere_dim, out_features=bottlenect_dim)
-                self.convert_head1 = snlinear(in_features=bottlenect_dim, out_features=hypersphere_dim)
+                self.convert_head0 = snlinear(in_features=hypersphere_dim, out_features=bottleneck_dim)
+                self.convert_head1 = snlinear(in_features=bottleneck_dim, out_features=hypersphere_dim)
             elif self.conditional_strategy == 'ProjGAN':
                 self.embedding = sn_embedding(num_classes, embed_dim)
             elif self.conditional_strategy == 'ACGAN':
@@ -443,8 +443,8 @@ class Discriminator(nn.Module):
             elif self.conditional_strategy == 'ContraGAN++':
                 self.embedding = embedding(num_classes, hypersphere_dim)
                 self.proj_head = linear(in_features=embed_dim, out_features=hypersphere_dim)
-                self.convert_head0 = linear(in_features=hypersphere_dim, out_features=bottlenect_dim)
-                self.convert_head1 = linear(in_features=bottlenect_dim, out_features=hypersphere_dim)
+                self.convert_head0 = linear(in_features=hypersphere_dim, out_features=bottleneck_dim)
+                self.convert_head1 = linear(in_features=bottleneck_dim, out_features=hypersphere_dim)
             elif self.conditional_strategy == 'ProjGAN':
                 self.embedding = embedding(num_classes, embed_dim)
             elif self.conditional_strategy == 'ACGAN':
