@@ -54,7 +54,7 @@ LOG_FORMAT = (
 
 
 class make_worker(object):
-    def __init__(self, cfgs, run_name, best_step, logger, writer, n_gpus, gen_model, dis_model, inception_model, Gen_copy,
+    def __init__(self, cfgs, run_name, best_step, logger, writer, n_gpus, gen_model, dis_model, eval_model, Gen_copy,
                  Gen_ema, train_dataset, eval_dataset, train_dataloader, eval_dataloader, G_optimizer, D_optimizer, G_loss,
                  D_loss, prev_ada_p, global_rank, local_rank, bn_stat_OnTheFly, checkpoint_dir, mu, sigma, best_fid,
                  best_fid_checkpoint_path):
@@ -72,7 +72,7 @@ class make_worker(object):
 
         self.gen_model = gen_model
         self.dis_model = dis_model
-        self.inception_model = inception_model
+        self.eval_model = eval_model
         self.Gen_copy = Gen_copy
         self.Gen_ema = Gen_ema
 
@@ -578,15 +578,15 @@ class make_worker(object):
             generator = change_generator_mode(self.gen_model, self.Gen_copy, self.bn_stat_OnTheFly, standing_statistics, standing_step,
                                               self.prior, self.batch_size, self.z_dim, self.num_classes, self.local_rank, training=False, counter=self.counter)
 
-            fid_score, self.m1, self.s1 = calculate_fid_score(self.eval_dataloader, generator, self.dis_model, self.inception_model, self.num_eval[self.eval_type],
+            fid_score, self.m1, self.s1 = calculate_fid_score(self.eval_dataloader, generator, self.dis_model, self.eval_model, self.num_eval[self.eval_type],
                                                               self.truncated_factor, self.prior, self.latent_op, self.latent_op_step4eval, self.latent_op_alpha,
                                                               self.latent_op_beta, self.local_rank, self.logger, self.mu, self.sigma, self.run_name)
 
-            kl_score, kl_std = calculate_incep_score(self.eval_dataloader, generator, self.dis_model, self.inception_model, self.num_eval[self.eval_type],
+            kl_score, kl_std = calculate_incep_score(self.eval_dataloader, generator, self.dis_model, self.eval_model, self.num_eval[self.eval_type],
                                                      self.truncated_factor, self.prior, self.latent_op, self.latent_op_step4eval, self.latent_op_alpha,
                                                      self.latent_op_beta, num_split, self.local_rank, self.logger)
 
-            precision, recall, f_beta, f_beta_inv = calculate_f_beta_score(self.eval_dataloader, generator, self.dis_model, self.inception_model, self.num_eval[self.eval_type],
+            precision, recall, f_beta, f_beta_inv = calculate_f_beta_score(self.eval_dataloader, generator, self.dis_model, self.eval_model, self.num_eval[self.eval_type],
                                                                            num_run4PR, num_cluster4PR, beta4PR, self.truncated_factor, self.prior, self.latent_op,
                                                                            self.latent_op_step4eval, self.latent_op_alpha, self.latent_op_beta, self.local_rank, self.logger)
             PR_Curve = plot_pr_curve(precision, recall, self.run_name, self.logger)

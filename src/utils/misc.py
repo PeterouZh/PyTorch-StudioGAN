@@ -586,13 +586,3 @@ class SaveOutput:
 
     def clear(self):
         self.outputs = []
-
-
-def calculate_ortho_reg(m, rank):
-    with torch.enable_grad():
-        reg = 1e-6
-        param_flat = m.view(m.shape[0], -1)
-        sym = torch.mm(param_flat, torch.t(param_flat))
-        sym -= torch.eye(param_flat.shape[0]).to(rank)
-        ortho_loss = reg * sym.abs().sum()
-    return ortho_loss

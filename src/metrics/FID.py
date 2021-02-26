@@ -81,6 +81,7 @@ def calculate_frechet_distance(mu1, sigma1, mu2, sigma2, eps=1e-6):
     tr_covmean = np.trace(covmean)
     return (diff.dot(diff) + np.trace(sigma1) + np.trace(sigma2) - 2 * tr_covmean)
 
+
 def generate_images(batch_size, gen, dis, truncated_factor, prior, latent_op, latent_op_step,
                     latent_op_alpha, latent_op_beta, device):
     if isinstance(gen, DataParallel) or isinstance(gen, DistributedDataParallel):
@@ -104,7 +105,7 @@ def generate_images(batch_size, gen, dis, truncated_factor, prior, latent_op, la
     return batch_images, fake_labels
 
 
-def get_activations(data_loader, generator, discriminator, inception_model, n_generate, truncated_factor, prior, is_generate,
+def get_activations(data_loader, generator, discriminator, eval_model, n_generate, truncated_factor, prior, is_generate,
                     latent_op, latent_op_step, latent_op_alpha, latent_op_beta, device, tqdm_disable=False, run_name=None):
     """Calculates the activations of the pool_3 layer for all images.
     Params:
@@ -139,7 +140,7 @@ def get_activations(data_loader, generator, discriminator, inception_model, n_ge
             images = images.to(device)
 
             with torch.no_grad():
-                embeddings, logits = inception_model(images)
+                embeddings, logits = eval_model.get_outputs(images)
 
             if total_instance >= batch_size:
                 pred_arr[start:end] = embeddings.cpu().data.numpy().reshape(batch_size, -1)
@@ -153,7 +154,7 @@ def get_activations(data_loader, generator, discriminator, inception_model, n_ge
                 images = feed_list[0]
                 images = images.to(device)
                 with torch.no_grad():
-                    embeddings, logits = inception_model(images)
+                    embeddings, logits = eval_model.get_outputs(images)
 
                 if total_instance >= batch_size:
                     pred_arr[start:end] = embeddings.cpu().data.numpy().reshape(batch_size, -1)
@@ -166,28 +167,28 @@ def get_activations(data_loader, generator, discriminator, inception_model, n_ge
     return pred_arr
 
 
-def calculate_activation_statistics(data_loader, generator, discriminator, inception_model, n_generate, truncated_factor, prior,
+def calculate_activation_statistics(data_loader, generator, discriminator, eval_model, n_generate, truncated_factor, prior,
                                     is_generate, latent_op, latent_op_step, latent_op_alpha, latent_op_beta, device, tqdm_disable, run_name=None):
-    act = get_activations(data_loader, generator, discriminator, inception_model, n_generate, truncated_factor, prior,
+    act = get_activations(data_loader, generator, discriminator, eval_model, n_generate, truncated_factor, prior,
                           is_generate, latent_op, latent_op_step, latent_op_alpha, latent_op_beta, device, tqdm_disable, run_name)
     mu = np.mean(act, axis=0)
     sigma = np.cov(act, rowvar=False)
     return mu, sigma
 
 
-def calculate_fid_score(data_loader, generator, discriminator, inception_model, n_generate, truncated_factor, prior,
+def calculate_fid_score(data_loader, generator, discriminator, eval_model, n_generate, truncated_factor, prior,
                         latent_op, latent_op_step, latent_op_alpha, latent_op_beta, device, logger, pre_cal_mean=None, pre_cal_std=None, run_name=None):
     disable_tqdm = device != 0
-    inception_model.eval()
+    eval_model.eval()
 
     if device == 0: logger.info("Calculating FID Score....")
     if pre_cal_mean is not None and pre_cal_std is not None:
         m1, s1 = pre_cal_mean, pre_cal_std
     else:
-        m1, s1 = calculate_activation_statistics(data_loader, generator, discriminator, inception_model, n_generate, truncated_factor,
+        m1, s1 = calculate_activation_statistics(data_loader, generator, discriminator, eval_model, n_generate, truncated_factor,
                                                  prior, False, False, 0, latent_op_alpha, latent_op_beta, device, tqdm_disable=disable_tqdm)
 
-    m2, s2 = calculate_activation_statistics(data_loader, generator, discriminator, inception_model, n_generate, truncated_factor, prior,
+    m2, s2 = calculate_activation_statistics(data_loader, generator, discriminator, eval_model, n_generate, truncated_factor, prior,
                                              True, latent_op, latent_op_step, latent_op_alpha, latent_op_beta, device, tqdm_disable=disable_tqdm, run_name=run_name)
 
     fid_value = calculate_frechet_distance(m1, s1, m2, s2)

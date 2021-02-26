@@ -37,8 +37,8 @@ from torch.nn.parallel import DistributedDataParallel
 
 
 class precision_recall(object):
-    def __init__(self,inception_model, device):
-        self.inception_model = inception_model
+    def __init__(self,eval_model, device):
+        self.eval_model = eval_model
         self.device = device
         self.disable_tqdm = device != 0
 
@@ -67,7 +67,7 @@ class precision_recall(object):
 
     def inception_softmax(self, batch_images):
         with torch.no_grad():
-            embeddings, logits = self.inception_model(batch_images)
+            embeddings, logits = self.eval_model.get_outputs(batch_images)
         return embeddings
 
 
@@ -145,12 +145,12 @@ class precision_recall(object):
         return (1 + beta**2) * (precision * recall) / ((beta**2 * precision) + recall + epsilon)
 
 
-def calculate_f_beta_score(dataloader, gen, dis, inception_model, num_generate, num_runs, num_clusters, beta, truncated_factor,
+def calculate_f_beta_score(dataloader, gen, dis, eval_model, num_generate, num_runs, num_clusters, beta, truncated_factor,
                            prior, latent_op, latent_op_step, latent_op_alpha, latent_op_beta, device, logger):
-    inception_model.eval()
+    eval_model.eval()
 
     batch_size = dataloader.batch_size
-    PR = precision_recall(inception_model, device=device)
+    PR = precision_recall(eval_model, device=device)
     if device == 0: logger.info("Calculate F_beta Score....")
     precision, recall = PR.compute_precision_recall(dataloader, gen, dis, num_generate, num_runs, num_clusters, truncated_factor,
                                                     prior, latent_op, latent_op_step, latent_op_alpha, latent_op_beta, batch_size, device)

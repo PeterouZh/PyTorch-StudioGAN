@@ -17,8 +17,8 @@ from torch.nn.parallel import DistributedDataParallel
 
 
 class evaluator(object):
-    def __init__(self,inception_model, device):
-        self.inception_model = inception_model
+    def __init__(self,eval_model, device):
+        self.eval_model = eval_model
         self.device = device
         self.disable_tqdm = device != 0
 
@@ -46,7 +46,7 @@ class evaluator(object):
 
     def inception_softmax(self, batch_images):
         with torch.no_grad():
-            embeddings, logits = self.inception_model(batch_images)
+            embeddings, logits = self.eval_model.get_outputs(batch_images)
             y = torch.nn.functional.softmax(logits, dim=1)
         return y
 
@@ -102,12 +102,12 @@ class evaluator(object):
         return m_scores, m_std
 
 
-def calculate_incep_score(dataloader, generator, discriminator, inception_model, n_generate, truncated_factor, prior,
+def calculate_incep_score(dataloader, generator, discriminator, eval_model, n_generate, truncated_factor, prior,
                           latent_op, latent_op_step, latent_op_alpha, latent_op_beta, splits, device, logger):
-    inception_model.eval()
+    eval_model.eval()
 
     batch_size = dataloader.batch_size
-    evaluator_instance = evaluator(inception_model, device=device)
+    evaluator_instance = evaluator(eval_model, device=device)
     if device == 0: logger.info("Calculating Inception Score....")
     kl_score, kl_std = evaluator_instance.eval_gen(generator, discriminator, n_generate, truncated_factor, prior, latent_op,
                                                    latent_op_step, latent_op_alpha, latent_op_beta, splits, batch_size)

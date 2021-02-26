@@ -12,9 +12,9 @@ from metrics.IS import evaluator
 
 
 
-def prepare_inception_moments(dataloader, eval_mode, generator, inception_model, splits, run_name, logger, device):
+def prepare_inception_moments(dataloader, generator, eval_mode, eval_model, splits, run_name, logger, device):
     dataset_name = dataloader.dataset.dataset_name
-    inception_model.eval()
+    eval_model.eval()
 
     save_path = os.path.abspath(os.path.join("./data", dataset_name + "_" + eval_mode +'_' + 'inception_moments.npz'))
     is_file = os.path.isfile(save_path)
@@ -27,7 +27,7 @@ def prepare_inception_moments(dataloader, eval_mode, generator, inception_model,
         mu, sigma = calculate_activation_statistics(data_loader=dataloader,
                                                     generator=generator,
                                                     discriminator=None,
-                                                    inception_model=inception_model,
+                                                    eval_model=eval_model,
                                                     n_generate=None,
                                                     truncated_factor=None,
                                                     prior=None,
@@ -47,7 +47,7 @@ def prepare_inception_moments(dataloader, eval_mode, generator, inception_model,
         pass
     else:
         if device == 0: logger.info('calculate inception score of {} dataset.'.format(eval_mode))
-        evaluator_instance = evaluator(inception_model, device=device)
+        evaluator_instance = evaluator(eval_model, device=device)
         is_score, is_std = evaluator_instance.eval_dataset(dataloader, splits=splits)
         if device == 0: logger.info('Inception score={is_score}-Inception_std={is_std}'.format(is_score=is_score, is_std=is_std))
     return mu, sigma

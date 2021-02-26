@@ -12,7 +12,7 @@ from os.path import dirname, abspath, exists, join
 from torchlars import LARS
 
 from data_utils.load_dataset import *
-from metrics.inception_network import InceptionV3
+from metrics.build_model import build_eval_model
 from metrics.prepare_inception_moments import prepare_inception_moments
 from utils.log import make_checkpoint_dir, make_logger
 from utils.losses import *
@@ -23,6 +23,7 @@ from sync_batchnorm.batchnorm import convert_model
 from worker import make_worker
 
 import torch
+import torch.nn as nn
 from torch.utils.data import DataLoader
 from torch.nn import DataParallel
 from torch.nn.parallel import DistributedDataParallel as DDP
@@ -39,7 +40,7 @@ def prepare_train_eval(local_rank, gpus_per_node, world_size, run_name, train_co
         print("When training, StudioGAN does not apply standing_statistics for evaluation. " + \
               "After training is done, StudioGAN will accumulate batchnorm statistics and evaluate the trained model")
 
-    prev_ada_p, step, best_step, best_fid, best_fid_checkpoint_path, mu, sigma, inception_model = None, 0, 0, None, None, None, None, None
+    prev_ada_p, step, best_step, best_fid, best_fid_checkpoint_path, mu, sigma, eval_model = None, 0, 0, None, None, None, None, None
 
     if cfgs.distributed_data_parallel:
         global_rank = cfgs.nr*(gpus_per_node) + local_rank
@@ -102,12 +103,12 @@ def prepare_train_eval(local_rank, gpus_per_node, world_size, run_name, train_co
 
         Dis = module.Discriminator(cfgs.dataset_name, cfgs.img_size, cfgs.batch_size, 'transformer', T2T_cfgs['token_dim'], cfgs.num_classes,
                                    T2T_cfgs['embed_dim'], T2T_cfgs['depth'], T2T_cfgs['num_heads'], T2T_cfgs['mlp_ratio'],
-                                   cfgs.hypersphere_dim, cfgs.bottleneck_dim, cfgs.normalize_embed, False, None, cfgs.activation_fn, 
+                                   cfgs.hypersphere_dim, cfgs.bottleneck_dim, cfgs.normalize_embed, False, None, cfgs.activation_fn,
                                    cfgs.conditional_strategy, 0.0, 0.0, 0.0, cfgs.d_spectral_norm, cfgs.d_init, cfgs.mixed_precision).to(local_rank)
 
     else:
         Dis = module.Discriminator(cfgs.img_size, cfgs.d_conv_dim, cfgs.d_spectral_norm, cfgs.attention, cfgs.attention_after_nth_dis_block,
-                                cfgs.activation_fn, cfgs.conditional_strategy, cfgs.hypersphere_dim, cfgs.bottleneck_dim, cfgs.num_classes, 
+                                cfgs.activation_fn, cfgs.conditional_strategy, cfgs.hypersphere_dim, cfgs.bottleneck_dim, cfgs.num_classes,
                                 cfgs.nonlinear_embed, cfgs.normalize_embed, cfgs.d_init, cfgs.D_depth, cfgs.mixed_precision).to(local_rank)
 
     if cfgs.ema:
@@ -206,19 +207,12 @@ def prepare_train_eval(local_rank, gpus_per_node, world_size, run_name, train_co
 
     ##### load the inception network and prepare first/secend moments for calculating FID #####
     if cfgs.eval:
-        inception_model = InceptionV3().to(local_rank)
-        if world_size > 1 and cfgs.distributed_data_parallel:
-            toggle_grad(inception_model, on=True)
-            inception_model = DDP(inception_model, device_ids=[local_rank], broadcast_buffers=False, find_unused_parameters=True)
-        elif world_size > 1 and cfgs.distributed_data_parallel is False:
-            inception_model = DataParallel(inception_model, output_device=local_rank)
-        else:
-            pass
-
+        save_output = SaveOutput()
+        eval_model = build_eval_model(cfgs.eval_backbone, cfgs.distributed_data_parallel, world_size, local_rank, save_output)
         mu, sigma = prepare_inception_moments(dataloader=eval_dataloader,
                                               generator=Gen,
                                               eval_mode=cfgs.eval_type,
-                                              inception_model=inception_model,
+                                              eval_model=eval_model,
                                               splits=1,
                                               run_name=run_name,
                                               logger=logger,
@@ -233,7 +227,7 @@ def prepare_train_eval(local_rank, gpus_per_node, world_size, run_name, train_co
         n_gpus=world_size,
         gen_model=Gen,
         dis_model=Dis,
-        inception_model=inception_model,
+        eval_model=eval_model,
         Gen_copy=Gen_copy,
         Gen_ema=Gen_ema,
         train_dataset=train_dataset,
