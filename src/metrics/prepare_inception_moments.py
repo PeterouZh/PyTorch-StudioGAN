@@ -15,8 +15,10 @@ from metrics.IS import evaluator
 def prepare_inception_moments(dataloader, generator, eval_mode, eval_model, splits, run_name, logger, device):
     dataset_name = dataloader.dataset.dataset_name
     eval_model.eval()
+    model_name = eval_model.model_name
 
-    save_path = os.path.abspath(os.path.join("./data", dataset_name + "_" + eval_mode +'_' + 'inception_moments.npz'))
+    save_path = os.path.abspath(os.path.join("./data",
+                                             dataset_name + "_" + eval_mode + '_' + model_name + '_moments.npz'))
     is_file = os.path.isfile(save_path)
 
     if is_file:
