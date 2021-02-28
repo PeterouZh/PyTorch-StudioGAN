@@ -187,7 +187,7 @@ def check_flag_1(tempering_type, pos_collected_numerator, conditional_strategy, 
     assert int(gradient_penalty_for_dis)*int(deep_regret_analysis_for_dis) == 0, \
         "You can't simultaneously apply Gradient Penalty (GP) and Deep Regret Analysis (DRA)."
 
-    if conditional_strategy in ["ContraGAN", "ContraGAN++"]:
+    if conditional_strategy in ["ContraGAN", "Contra_GAN++"]:
         assert tempering_type == "constant" or tempering_type == "continuous" or tempering_type == "discrete", \
             "Tempering_type should be one of constant, continuous, or discrete."
 

@@ -75,7 +75,7 @@ def latent_optimise(zs, fake_labels, gen_model, dis_model, conditional_strategy,
 
 
 def set_temperature(conditional_strategy, tempering_type, start_temperature, end_temperature, step_count, tempering_step, total_step):
-    if conditional_strategy in ['ContraGAN', 'ContraGAN++']:
+    if conditional_strategy in ['ContraGAN', 'Contra_GAN++']:
         if tempering_type == 'continuous':
             t = start_temperature + step_count*(end_temperature - start_temperature)/total_step
         elif tempering_type == 'discrete':
@@ -302,7 +302,7 @@ def calc_derv4gp(netD, conditional_strategy, real_data, fake_data, real_labels, 
     interpolates = interpolates.to(device)
     interpolates = autograd.Variable(interpolates, requires_grad=True)
 
-    if conditional_strategy in ['ContraGAN', "Proxy_NCA_GAN", "NT_Xent_GAN", "ContraGAN++"]:
+    if conditional_strategy in ['ContraGAN', "Proxy_NCA_GAN", "NT_Xent_GAN", "Contra_GAN++"]:
         _, _, disc_interpolates = netD(interpolates, real_labels)
     elif conditional_strategy in ['ProjGAN', 'no']:
             disc_interpolates = netD(interpolates, real_labels)
@@ -332,7 +332,7 @@ def calc_derv4dra(netD, conditional_strategy, real_data, real_labels, device):
     interpolates = interpolates.to(device)
     interpolates = autograd.Variable(interpolates, requires_grad=True)
 
-    if conditional_strategy in ['ContraGAN', "Proxy_NCA_GAN", "NT_Xent_GAN", "ContraGAN++"]:
+    if conditional_strategy in ['ContraGAN', "Proxy_NCA_GAN", "NT_Xent_GAN", "Contra_GAN++"]:
         _, _, disc_interpolates = netD(interpolates, real_labels)
     elif conditional_strategy in ['ProjGAN', 'no']:
             disc_interpolates = netD(interpolates, real_labels)
@@ -354,7 +354,7 @@ def calc_derv(inputs, labels, netD, conditional_strategy, device, netG=None):
     zs = autograd.Variable(inputs, requires_grad=True)
     fake_images = netG(zs, labels)
 
-    if conditional_strategy in ['ContraGAN', "Proxy_NCA_GAN", "NT_Xent_GAN", "ContraGAN++"]:
+    if conditional_strategy in ['ContraGAN', "Proxy_NCA_GAN", "NT_Xent_GAN", "Contra_GAN++"]:
         _, _, dis_out_fake = netD(fake_images, labels)
     elif conditional_strategy in ['ProjGAN', 'no']:
         dis_out_fake = netD(fake_images, labels)

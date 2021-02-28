@@ -64,7 +64,7 @@ class Generator(nn.Module):
         self.z_dim = z_dim
         self.num_classes = num_classes
         self.mixed_precision = mixed_precision
-        conditional_bn = True if conditional_strategy in ["ACGAN", "ProjGAN", "ContraGAN", "Proxy_NCA_GAN", "NT_Xent_GAN", "ContraGAN++"] else False
+        conditional_bn = True if conditional_strategy in ["ACGAN", "ProjGAN", "ContraGAN", "Proxy_NCA_GAN", "NT_Xent_GAN", "Contra_GAN++"] else False
 
         if g_spectral_norm:
             self.linear0 = snlinear(in_features=self.z_dim, out_features=self.in_dims[0]*4*4)
@@ -200,7 +200,7 @@ class Discriminator(nn.Module):
                 self.proj_head0 = snlinear(in_features=self.out_dims[-1], out_features=hypersphere_dim)
                 if self.nonlinear_embed:
                     self.proj_head1 = snlinear(in_features=hypersphere_dim, out_features=hypersphere_dim)
-            elif self.conditional_strategy == 'ContraGAN++':
+            elif self.conditional_strategy == 'Contra_GAN++':
                 self.embedding = sn_embedding(num_classes, hypersphere_dim)
                 self.proj_head = snlinear(in_features=self.out_dims[-1], out_features=hypersphere_dim)
                 self.convert_head0 = snlinear(in_features=hypersphere_dim, out_features=bottleneck_dim)
@@ -218,7 +218,7 @@ class Discriminator(nn.Module):
                 self.proj_head0 = linear(in_features=self.out_dims[-1], out_features=hypersphere_dim)
                 if self.nonlinear_embed:
                     self.proj_head1 = linear(in_features=hypersphere_dim, out_features=hypersphere_dim)
-            elif self.conditional_strategy == 'ContraGAN++':
+            elif self.conditional_strategy == 'Contra_GAN++':
                 self.embedding = embedding(num_classes, hypersphere_dim)
                 self.proj_head = linear(in_features=self.out_dims[-1], out_features=hypersphere_dim)
                 self.convert_head0 = linear(in_features=hypersphere_dim, out_features=bottleneck_dim)
@@ -262,7 +262,7 @@ class Discriminator(nn.Module):
                     cls_embed = F.normalize(cls_embed, dim=1)
                 return cls_proxy, cls_embed, authen_output
 
-            elif self.conditional_strategy == 'ContraGAN++':
+            elif self.conditional_strategy == 'Contra_GAN++':
                 cls_proxy = self.embedding(label)
                 cls_embed = self.proj_head(h)
                 authen_output = torch.squeeze(self.adv_head(h))
