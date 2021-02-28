@@ -411,9 +411,9 @@ class Discriminator(nn.Module):
                 return authen_output
 
             elif self.conditional_strategy in ['ContraGAN', 'Proxy_NCA_GAN', 'NT_Xent_GAN']:
+                authen_output = torch.squeeze(self.adv_head(h))
                 cls_proxy = self.embedding(label)
                 cls_embed = self.proj_head0(h)
-                authen_output = torch.squeeze(self.adv_head(h))
                 if self.nonlinear_embed:
                     cls_embed = self.proj_head1(self.activation(cls_embed))
                 if self.normalize_embed:
@@ -422,9 +422,9 @@ class Discriminator(nn.Module):
                 return cls_proxy, cls_embed, authen_output
 
             elif self.conditional_strategy == 'ContraGAN++':
+                authen_output = torch.squeeze(self.adv_head(h))
                 cls_proxy = self.embedding(label)
                 cls_embed = self.proj_head(h)
-                authen_output = torch.squeeze(self.adv_head(h))
                 if fake:
                     cls_embed = self.convert_head0(self.activation(cls_embed))
                     cls_embed = self.convert_head1(self.activation(cls_embed))
@@ -434,13 +434,13 @@ class Discriminator(nn.Module):
                 return cls_proxy, cls_embed, authen_output
 
             elif self.conditional_strategy == 'ProjGAN':
-                proj = torch.sum(torch.mul(self.embedding(label), h), 1)
                 authen_output = torch.squeeze(self.adv_head(h))
+                proj = torch.sum(torch.mul(self.embedding(label), h), 1)
                 return proj + authen_output
 
             elif self.conditional_strategy == 'ACGAN':
-                cls_output = self.cls_head(h)
                 authen_output = torch.squeeze(self.adv_head(h))
+                cls_output = self.cls_head(h)
                 return cls_output, authen_output
 
             else:

@@ -348,9 +348,8 @@ def change_generator_mode(gen, gen_copy, bn_stat_OnTheFly, standing_statistics, 
             gen_tmp.apply(set_deterministic_op_train)
     else:
         gen_tmp.eval()
-        if bn_stat_OnTheFly:
-            gen_tmp.apply(set_bn_train)
-            gen_tmp.apply(untrack_bn_statistics)
+        gen_tmp.apply(set_bn_train)
+        gen_tmp.apply(untrack_bn_statistics)
         gen_tmp.apply(set_deterministic_op_train)
     return gen_tmp
 
