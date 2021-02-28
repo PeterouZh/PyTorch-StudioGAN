@@ -5,6 +5,9 @@
 # src/utils/model_ops.py
 
 
+from timm.models.layers import DropPath
+import numpy as np
+
 import torch
 import torch.nn as nn
 from torch.nn.utils import spectral_norm
@@ -58,6 +61,9 @@ def linear(in_features, out_features, bias=True):
 def embedding(num_embeddings, embedding_dim):
     return nn.Embedding(num_embeddings=num_embeddings, embedding_dim=embedding_dim)
 
+def dropout(rate):
+    return nn.Dropout(rate)
+
 def snconv2d(in_channels, out_channels, kernel_size, stride=1, padding=0, dilation=1, groups=1, bias=True):
     return spectral_norm(nn.Conv2d(in_channels=in_channels, out_channels=out_channels, kernel_size=kernel_size,
                                    stride=stride, padding=padding, dilation=dilation, groups=groups, bias=bias), eps=1e-6)
@@ -72,8 +78,14 @@ def snlinear(in_features, out_features, bias=True):
 def sn_embedding(num_embeddings, embedding_dim):
     return spectral_norm(nn.Embedding(num_embeddings=num_embeddings, embedding_dim=embedding_dim), eps=1e-6)
 
+def batchnorm_1d(in_features, eps=1e-4, momentum=0.1, affine=True):
+    return nn.BatchNorm1d(in_features, eps=eps, momentum=momentum, affine=affine, track_running_stats=True)
+
 def batchnorm_2d(in_features, eps=1e-4, momentum=0.1, affine=True):
     return nn.BatchNorm2d(in_features, eps=eps, momentum=momentum, affine=affine, track_running_stats=True)
+
+def layernorm(in_features, eps=1e-4, affine=True):
+    return nn.LayerNorm(in_features, eps=eps, elementwise_affine=affine)
 
 
 class ConditionalBatchNorm2d(nn.Module):
@@ -116,6 +128,56 @@ class ConditionalBatchNorm2d_for_skip_and_shared(nn.Module):
         bias = self.bias(y).view(y.size(0), -1, 1, 1)
         out = self.bn(x)
         return out * gain + bias
+
+
+class Layernorm2d(nn.Module):
+    def __init__(self, batch_size, num_features, spectral_norm):
+        super().__init__()
+        self.num_features = num_features
+        self.ln = layernorm(num_features, eps=1e-4, affine=False)
+
+        if spectral_norm:
+            self.embed = sn_embedding(2, num_features)
+        else:
+            self.embed = embedding(2, num_features)
+
+        self.zeros = torch.zeros([batch_size], dtype=torch.long)
+        self.ones = torch.ones([batch_size], dtype=torch.long)
+
+    def forward(self, x):
+        """
+        device = x.get_device()
+        gain = (1 + self.embed(self.zeros.to(device))).view(-1, 1, self.num_features)
+        bias = self.embed(self.ones.to(device)).view(-1, 1, self.num_features)
+        out = self.ln(x)
+        return out * gain + bias
+        """
+        return x
+
+class Layernorm1d(nn.Module):
+    def __init__(self, batch_size, num_features, spectral_norm):
+        super().__init__()
+        self.num_features = num_features
+        self.ln = layernorm(num_features, eps=1e-4, affine=False)
+
+        if spectral_norm:
+            self.embed = sn_embedding(2, num_features)
+        else:
+            self.embed = embedding(2, num_features)
+
+        self.zeros = torch.zeros([batch_size], dtype=torch.long)
+        self.ones = torch.ones([batch_size], dtype=torch.long)
+
+    def forward(self, x):
+        """
+        device = x.get_device()
+        gain = (1 + self.embed(self.zeros.to(device))).view(-1, self.num_features)
+        bias = self.embed(self.ones.to(device)).view(-1, self.num_features)
+        out = self.ln(x)
+        return out * gain + bias
+        """
+        return x
+
 
 
 class Self_Attn(nn.Module):
@@ -168,3 +230,12 @@ class Self_Attn(nn.Module):
         attn_g = self.conv1x1_attn(attn_g)
         return x + self.sigma*attn_g
 
+def get_sinusoid_encoding(n_position, d_hid):
+    ''' Sinusoid position encoding table '''
+    def get_position_angle_vec(position):
+        return [position / np.power(10000, 2 * (hid_j // 2) / d_hid) for hid_j in range(d_hid)]
+
+    sinusoid_table = np.array([get_position_angle_vec(pos_i) for pos_i in range(n_position)])
+    sinusoid_table[:, 0::2] = np.sin(sinusoid_table[:, 0::2])  # dim 2i
+    sinusoid_table[:, 1::2] = np.cos(sinusoid_table[:, 1::2])  # dim 2i+1
+    return torch.FloatTensor(sinusoid_table).unsqueeze(0)
