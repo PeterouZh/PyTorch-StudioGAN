@@ -93,7 +93,7 @@ class LoadDataset(Dataset):
                     self.data = f['imgs'][:]
                     self.labels = f['labels'][:]
             else:
-                self.data = CIFAR10(root=os.path.join('data', self.dataset_name),
+                self.data = CIFAR10(root=os.path.join('datasets', self.dataset_name),
                                     train=self.train,
                                     download=self.download)
 
