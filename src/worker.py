@@ -159,18 +159,12 @@ class make_worker(object):
         self.ce_loss = torch.nn.CrossEntropyLoss()
         self.cosine_similarity = torch.nn.CosineSimilarity(dim=-1)
         self.policy = "color,translation,cutout"
+        self.sampler = define_sampler(self.dataset_name, self.conditional_strategy, self.batch_size, self.num_classes)
         self.counter = 0
 
-        self.sampler = define_sampler(self.dataset_name, self.conditional_strategy)
-
         if self.distributed_data_parallel: self.group = dist.new_group([n for n in range(self.n_gpus)])
-
-        check_flag_1(self.tempering_type, self.pos_collected_numerator, self.conditional_strategy, self.diff_aug, self.ada,
-                     self.mixed_precision, self.gradient_penalty_for_dis, self.deep_regret_analysis_for_dis, self.cr, self.bcr,
-                     self.zcr, self.distributed_data_parallel, self.synchronized_bn)
-
-        if self.ada:
-            self.adtv_aug = Adaptive_Augment(self.prev_ada_p, self.ada_target, self.ada_length, self.batch_size, self.local_rank)
+        if self.mixed_precision: self.scaler = torch.cuda.amp.GradScaler()
+        if self.ada: self.adtv_aug = Adaptive_Augment(self.prev_ada_p, self.ada_target, self.ada_length, self.batch_size, self.local_rank)
 
         if self.conditional_strategy in ['ProjGAN', 'ContraGAN', 'Proxy_NCA_GAN']:
             if isinstance(self.dis_model, DataParallel) or isinstance(self.dis_model, DistributedDataParallel):
@@ -186,9 +180,6 @@ class make_worker(object):
             self.NT_Xent_criterion = NT_Xent_loss(self.local_rank, self.batch_size)
         else:
             pass
-
-        if self.mixed_precision:
-            self.scaler = torch.cuda.amp.GradScaler()
 
         if self.dataset_name == "imagenet":
             self.num_eval = {'train':50000, 'valid':50000}
@@ -579,7 +570,7 @@ class make_worker(object):
             precision, recall, f_beta, f_beta_inv = calculate_f_beta_score(self.eval_dataloader, generator, self.dis_model, self.inception_model, self.num_eval[self.eval_type],
                                                                            num_run4PR, num_cluster4PR, beta4PR, self.truncated_factor, self.prior, self.latent_op,
                                                                            self.latent_op_step4eval, self.latent_op_alpha, self.latent_op_beta, self.local_rank, self.logger)
-            PR_Curve = plot_pr_curve(precision, recall, self.run_name, self.logger)
+            PR_Curve = plot_pr_curve(precision, recall, self.run_name, self.logger, logging=True)
 
             if self.conditional_strategy in ['ProjGAN', 'ContraGAN', 'Proxy_NCA_GAN']:
                 if self.dataset_name == "cifar10":
@@ -593,7 +584,7 @@ class make_worker(object):
                     labels = classes.detach().cpu().numpy()
                 proxies = self.embedding_layer(classes)
                 sim_p = self.cosine_similarity(proxies.unsqueeze(1), proxies.unsqueeze(0))
-                sim_heatmap = plot_sim_heatmap(sim_p.detach().cpu().numpy(), labels, labels, self.run_name, self.logger)
+                sim_heatmap = plot_sim_heatmap(sim_p.detach().cpu().numpy(), labels, labels, self.run_name, self.logger, logging=True)
 
             if self.D_loss.__name__ != "loss_wgan_dis":
                 real_train_acc, fake_acc = calculate_accuracy(self.train_dataloader, generator, self.dis_model, self.D_loss, self.num_eval[self.eval_type],
@@ -630,6 +621,8 @@ class make_worker(object):
                 self.logger.info('Inception score (Step: {step}, {num} generated images): {IS}'.format(step=step, num=str(self.num_eval[self.eval_type]), IS=kl_score))
                 if self.train:
                     self.logger.info('Best FID score (Step: {step}, Using {type} moments): {FID}'.format(step=self.best_step, type=self.eval_type, FID=self.best_fid))
+
+            self.run_image_visualization(nrow=self.cfgs.nrow, ncol=self.cfgs.ncol, standing_statistics=False, standing_step="N/A")
 
             self.dis_model.train()
             generator = change_generator_mode(self.gen_model, self.Gen_copy, self.bn_stat_OnTheFly, standing_statistics, standing_step,
@@ -681,12 +674,12 @@ class make_worker(object):
             if self.latent_op:
                 zs = latent_optimise(zs, fake_labels, self.gen_model, self.dis_model, self.conditional_strategy,
                                         self.latent_op_step, self.latent_op_rate, self.latent_op_alpha, self.latent_op_beta,
-                                        False, self.local_rank)
+                                        False, self.local_rank, sampler=self.sampler)
 
             generated_images = generator(zs, fake_labels, evaluation=True)
 
             plot_img_canvas((generated_images.detach().cpu()+1)/2, "./figures/{run_name}/generated_canvas.png".\
-                            format(run_name=self.run_name), self.logger, ncol)
+                            format(run_name=self.run_name), ncol, self.logger, logging=True)
 
             generator = change_generator_mode(self.gen_model, self.Gen_copy, self.bn_stat_OnTheFly, standing_statistics, standing_step,
                                               self.prior, self.batch_size, self.z_dim, self.num_classes, self.local_rank, training=True, counter=self.counter)
@@ -715,10 +708,11 @@ class make_worker(object):
                 fake_anchor_embedding = torch.squeeze(resnet50_conv((fake_image+1)/2))
 
                 num_samples, target_sampler = target_class_sampler(self.train_dataset, c)
-                train_dataloader = torch.utils.data.DataLoader(self.train_dataset, batch_size=self.batch_size, shuffle=False, sampler=target_sampler,
+                batch_size = self.batch_size if num_samples >= self.batch_size else num_samples
+                train_dataloader = torch.utils.data.DataLoader(self.train_dataset, batch_size=batch_size, shuffle=False, sampler=target_sampler,
                                                                num_workers=self.num_workers, pin_memory=True)
                 train_iter = iter(train_dataloader)
-                for batch_idx in range(num_samples//self.batch_size):
+                for batch_idx in range(num_samples//batch_size):
                     real_images, real_labels = next(train_iter)
                     real_images = real_images.to(self.local_rank)
                     real_embeddings = torch.squeeze(resnet50_conv((real_images+1)/2))
@@ -736,7 +730,7 @@ class make_worker(object):
                     row_images = np.concatenate([fake_image.detach().cpu().numpy(), holder[nearest_indices]], axis=0)
                     canvas = np.concatenate((canvas, row_images), axis=0)
                     plot_img_canvas((torch.from_numpy(canvas)+1)/2, "./figures/{run_name}/Fake_anchor_{ncol}NN_{cls}_classes.png".\
-                                    format(run_name=self.run_name,ncol=ncol, cls=c+1), self.logger, ncol, logging=False)
+                                    format(run_name=self.run_name, ncol=ncol, cls=c+1), ncol, self.logger, logging=False)
                 else:
                     row_images = np.concatenate([fake_image.detach().cpu().numpy(), holder[nearest_indices]], axis=0)
                     canvas = np.concatenate((canvas, row_images), axis=0)
@@ -780,7 +774,7 @@ class make_worker(object):
                 interpolated_images = generator(zs, None, shared_label=ys, evaluation=True)
 
                 plot_img_canvas((interpolated_images.detach().cpu()+1)/2, "./figures/{run_name}/{num}_Interpolated_images_{fix_flag}.png".\
-                                format(num=num, run_name=self.run_name, fix_flag=name), self.logger, ncol, logging=False)
+                                format(num=num, run_name=self.run_name, fix_flag=name), ncol, self.logger, logging=False)
 
             generator = change_generator_mode(self.gen_model, self.Gen_copy, self.bn_stat_OnTheFly, standing_statistics, standing_step,
                                               self.prior, self.batch_size, self.z_dim, self.num_classes, self.local_rank, training=True, counter=self.counter)
@@ -842,7 +836,7 @@ class make_worker(object):
                     real_gray_spectrum += 20*np.log(np.abs(real_gray_f_shifted))/N
                     fake_gray_spectrum += 20*np.log(np.abs(fake_gray_f_shifted))/N
 
-            plot_spectrum_image(real_gray_spectrum, fake_gray_spectrum, self.run_name, self.logger)
+            plot_spectrum_image(real_gray_spectrum, fake_gray_spectrum, self.run_name, self.logger, logging=True)
 
             generator = change_generator_mode(self.gen_model, self.Gen_copy, self.bn_stat_OnTheFly, standing_statistics, standing_step,
                                               self.prior, self.batch_size, self.z_dim, self.num_classes, self.local_rank, training=True, counter=self.counter)
@@ -926,11 +920,17 @@ class make_worker(object):
 
             # t-SNE
             tsne = TSNE(n_components=2, verbose=1, perplexity=40, n_iter=300)
-            real_tsne_results = tsne.fit_transform(real["embeds"])
-            plot_tsne_scatter_plot(real, real_tsne_results, "real", self.run_name, self.logger)
+            if self.num_classes > 10:
+                 cls_indices = np.random.permutation(self.num_classes)[:10]
+                 real["embeds"] = real["embeds"][np.isin(real["labels"], cls_indices)]
+                 real["labels"] = real["labels"][np.isin(real["labels"], cls_indices)]
+                 fake["embeds"] = fake["embeds"][np.isin(fake["labels"], cls_indices)]
+                 fake["labels"] = fake["labels"][np.isin(fake["labels"], cls_indices)]
 
+            real_tsne_results = tsne.fit_transform(real["embeds"])
+            plot_tsne_scatter_plot(real, real_tsne_results, "real", self.run_name, self.logger, logging=True)
             fake_tsne_results = tsne.fit_transform(fake["embeds"])
-            plot_tsne_scatter_plot(fake, fake_tsne_results, "fake", self.run_name, self.logger)
+            plot_tsne_scatter_plot(fake, fake_tsne_results, "fake", self.run_name, self.logger, logging=True)
 
             generator = change_generator_mode(self.gen_model, self.Gen_copy, self.bn_stat_OnTheFly, standing_statistics, standing_step,
                                               self.prior, self.batch_size, self.z_dim, self.num_classes, self.local_rank, training=True, counter=self.counter)

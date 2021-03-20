@@ -147,9 +147,9 @@ def count_parameters(module):
     return 'Number of parameters: {}'.format(sum([p.data.nelement() for p in module.parameters()]))
 
 
-def define_sampler(dataset_name, conditional_strategy):
+def define_sampler(dataset_name, conditional_strategy, batch_size, num_classes):
     if conditional_strategy != "no":
-        if dataset_name == "cifar10":
+        if dataset_name == "cifar10" or batch_size >= num_classes*8:
             sampler = "class_order_all"
         else:
             sampler = "class_order_some"
@@ -158,46 +158,81 @@ def define_sampler(dataset_name, conditional_strategy):
     return sampler
 
 
-def check_flag_0(batch_size, n_gpus, freeze_layers, checkpoint_folder, architecture, img_size):
-    assert batch_size % n_gpus == 0, "Batch_size should be divided by the number of gpus."
-
-    if architecture == "dcgan":
-        assert img_size == 32, "Sry,\
+def check_flags(train_configs, model_configs, n_gpus):
+    if model_configs['train']['model']['architecture'] == "dcgan":
+        assert model_configs['data_processing']['img_size'] == 32, "Sry,\
             StudioGAN does not support dcgan models for generation of images larger than 32 resolution."
 
-    if freeze_layers > -1:
-        assert checkpoint_folder is not None, "Freezing discriminator needs a pre-trained model."
+    if train_configs['freeze_layers'] > -1:
+        assert train_configs['checkpoint_folder'] is not None,\
+            "Freezing discriminator needs a pre-trained model."
 
+    if train_configs['distributed_data_parallel']:
+        msg = "StudioGAN does not support image visualization, k_nearest_neighbor, interpolation, frequency, and tsne analysis with DDP. " +\
+            "Please change DDP with a single GPU training or DataParallel instead."
+        assert train_configs['image_visualization'] + train_configs['k_nearest_neighbor'] + train_configs['interpolation'] +\
+            train_configs['frequency_analysis'] + train_configs['tsne_analysis'] == 0, msg
 
-def check_flag_1(tempering_type, pos_collected_numerator, conditional_strategy, diff_aug, ada, mixed_precision,
-                 gradient_penalty_for_dis, deep_regret_analysis_for_dis, cr, bcr, zcr,
-                 distributed_data_parallel, synchronized_bn):
-    assert int(diff_aug)*int(ada) == 0, \
-        "You can't simultaneously apply Differentiable Augmentation (DiffAug) and Adaptive Discriminator Augmentation (ADA)."
+    if model_configs['train']['model']['conditional_strategy'] in ["NT_Xent_GAN", "Proxy_NCA_GAN", "ContraGAN"]:
+        assert not train_configs['distributed_data_parallel'], \
+        "StudioGAN does not support DDP training for NT_Xent_GAN, Proxy_NCA_GAN, and ContraGAN"
 
-    assert int(mixed_precision)*int(gradient_penalty_for_dis) == 0, \
-        "You can't simultaneously apply mixed precision training (mpc) and Gradient Penalty for WGAN-GP."
+    if train_configs['train']*train_configs['standing_statistics']:
+        print("When training, StudioGAN does not apply standing_statistics for evaluation. " + \
+              "After training is done, StudioGAN will accumulate batchnorm statistics and evaluate the trained model")
 
-    assert int(mixed_precision)*int(deep_regret_analysis_for_dis) == 0, \
-        "You can't simultaneously apply mixed precision training (mpc) and Deep Regret Analysis for DRAGAN."
-
-    assert int(cr)*int(bcr) == 0 and int(cr)*int(zcr) == 0, \
-        "You can't simultaneously turn on Consistency Reg. (CR) and Improved Consistency Reg. (ICR)."
-
-    assert int(gradient_penalty_for_dis)*int(deep_regret_analysis_for_dis) == 0, \
-        "You can't simultaneously apply Gradient Penalty (GP) and Deep Regret Analysis (DRA)."
-
-    if conditional_strategy == "ContraGAN":
-        assert tempering_type == "constant" or tempering_type == "continuous" or tempering_type == "discrete", \
+    if model_configs['train']['model']['conditional_strategy'] == "ContraGAN":
+        assert model_configs['train']['loss_function']['tempering_type'] == "constant" or \
+            model_configs['train']['loss_function']['tempering_type'] == "continuous" or \
+            model_configs['train']['loss_function']['tempering_type'] == "discrete", \
             "Tempering_type should be one of constant, continuous, or discrete."
 
-    if pos_collected_numerator:
-        assert conditional_strategy == "ContraGAN", "Pos_collected_numerator option is not appliable except for ContraGAN."
+    if model_configs['train']['model']['pos_collected_numerator']:
+        assert model_configs['train']['model']['conditional_strategy'] == "ContraGAN", \
+            "Pos_collected_numerator option is not appliable except for ContraGAN."
 
-    if distributed_data_parallel:
+    if train_configs['distributed_data_parallel']:
         msg = 'Evaluation results of the image generation with DDP are not exact. ' + \
             'Please use a single GPU training mode or DataParallel for exact evluation.'
         warnings.warn(msg)
+
+    if model_configs['data_processing']['dataset_name'] == 'cifar10':
+        assert train_configs['eval_type'] in ['train', 'test'], "Cifar10 does not contain dataset for validation."
+
+    if train_configs['interpolation']:
+        assert model_configs['train']['model']['architecture'] in ["big_resnet", "biggan_deep"],\
+            "StudioGAN does not support interpolation analysis except for biggan and biggan_deep."
+
+    elif model_configs['data_processing']['dataset_name'] in ['imagenet', 'tiny_imagenet', 'custom']:
+        assert train_configs['eval_type'] == 'train' or train_configs['eval_type'] == 'valid', \
+            "StudioGAN dose not support the evalutation protocol that uses the test dataset on imagenet, tiny imagenet, and custom datasets"
+
+    assert train_configs['bn_stat_OnTheFly']*train_configs['standing_statistics'] == 0, \
+        "You can't turn on train_statistics for bn layers and standing_statistics simultaneously."
+
+    assert train_configs['bn_stat_OnTheFly']*train_configs['synchronized_bn'] == 0, \
+        "You can't turn on train_statistics for bn layers and synchronized_bn simultaneously."
+
+    assert model_configs['train']['optimization']['batch_size'] % n_gpus == 0, \
+        "Batch_size should be divided by the number of gpus."
+
+    assert int(model_configs['train']['training_and_sampling_setting']['diff_aug']) * \
+        int(model_configs['train']['training_and_sampling_setting']['ada']) == 0, \
+        "You can't simultaneously apply Differentiable Augmentation (DiffAug) and Adaptive Discriminator Augmentation (ADA)."
+
+    assert int(train_configs['mixed_precision'])*int(model_configs['train']['loss_function']['gradient_penalty_for_dis']) == 0, \
+        "You can't simultaneously apply mixed precision training (mpc) and Gradient Penalty for WGAN-GP."
+
+    assert int(train_configs['mixed_precision'])*int(model_configs['train']['loss_function']['deep_regret_analysis_for_dis']) == 0, \
+        "You can't simultaneously apply mixed precision training (mpc) and Deep Regret Analysis for DRAGAN."
+
+    assert int(model_configs['train']['loss_function']['cr'])*int(model_configs['train']['loss_function']['bcr']) == 0 and \
+        int(model_configs['train']['loss_function']['cr'])*int(model_configs['train']['loss_function']['zcr']) == 0, \
+        "You can't simultaneously turn on Consistency Reg. (CR) and Improved Consistency Reg. (ICR)."
+
+    assert int(model_configs['train']['loss_function']['gradient_penalty_for_dis'])* \
+    int(model_configs['train']['loss_function']['deep_regret_analysis_for_dis']) == 0, \
+        "You can't simultaneously apply Gradient Penalty (GP) and Deep Regret Analysis (DRA)."
 
 
 # Convenience utility to switch off requires_grad
@@ -355,7 +390,8 @@ def change_generator_mode(gen, gen_copy, bn_stat_OnTheFly, standing_statistics, 
     return gen_tmp
 
 
-def plot_img_canvas(images, save_path, logger, nrow, logging=True):
+def plot_img_canvas(images, save_path, nrow, logger, logging=True):
+    if logger is None: logging = False
     directory = dirname(save_path)
 
     if not exists(abspath(directory)):
@@ -365,7 +401,8 @@ def plot_img_canvas(images, save_path, logger, nrow, logging=True):
     if logging: logger.info("Saved image to {}".format(save_path))
 
 
-def plot_pr_curve(precision, recall, run_name, logger, log=False):
+def plot_pr_curve(precision, recall, run_name, logger, logging=True):
+    if logger is None: logging=False
     directory = join('./figures', run_name)
 
     if not exists(abspath(directory)):
@@ -381,12 +418,12 @@ def plot_pr_curve(precision, recall, run_name, logger, log=False):
     ax.set_ylabel('Precision (Higher is better)', fontsize=15)
     fig.tight_layout()
     fig.savefig(save_path)
-    if log:
-        logger.info("Save image to {}".format(save_path))
+    if logging: logger.info("Save image to {}".format(save_path))
     return fig
 
 
-def plot_spectrum_image(real_spectrum, fake_spectrum, run_name, logger, log=False):
+def plot_spectrum_image(real_spectrum, fake_spectrum, run_name, logger, logging=True):
+    if logger is None: logging=False
     directory = join('./figures', run_name)
 
     if not exists(abspath(directory)):
@@ -398,17 +435,17 @@ def plot_spectrum_image(real_spectrum, fake_spectrum, run_name, logger, log=Fals
     ax1 = fig.add_subplot(121)
     ax2 = fig.add_subplot(122)
 
-    ax1.imshow(real_spectrum)
+    ax1.imshow(real_spectrum, cmap='viridis')
     ax1.set_title("Spectrum of real images")
 
-    ax2.imshow(fake_spectrum)
+    ax2.imshow(fake_spectrum, cmap='viridis')
     ax2.set_title("Spectrum of fake images")
     fig.savefig(save_path)
-    if log:
-        logger.info("Save image to {}".format(save_path))
+    if logging: logger.info("Save image to {}".format(save_path))
 
 
-def plot_tsne_scatter_plot(df, tsne_results, flag, run_name, logger):
+def plot_tsne_scatter_plot(df, tsne_results, flag, run_name, logger, logging=True):
+    if logger is None: logging=False
     directory = join('./figures', run_name, flag)
 
     if not exists(abspath(directory)):
@@ -431,10 +468,11 @@ def plot_tsne_scatter_plot(df, tsne_results, flag, run_name, logger):
     plt.xlabel('', fontsize=7)
     plt.ylabel('', fontsize=7)
     plt.savefig(save_path)
-    logger.info("Save image to {}".format(save_path))
+    if logging: logger.info("Save image to {}".format(save_path))
 
 
-def plot_sim_heatmap(similarity, xlabels, ylabels, run_name, logger, log=False):
+def plot_sim_heatmap(similarity, xlabels, ylabels, run_name, logger, logging=True):
+    if logger is None: logging=False
     directory = join('./figures', run_name)
 
     if not exists(abspath(directory)):
@@ -461,8 +499,7 @@ def plot_sim_heatmap(similarity, xlabels, ylabels, run_name, logger, log=False):
     ax.set_ylabel("")
 
     fig.savefig(save_path)
-    if log:
-        logger.info("Save image to {}".format(save_path))
+    if logging: logger.info("Save image to {}".format(save_path))
     return fig
 
 

@@ -5,8 +5,10 @@
 # src/loader.py
 
 
+import json
 import glob
 import os
+import warnings
 import random
 from os.path import dirname, abspath, exists, join
 from torchlars import LARS
@@ -30,15 +32,8 @@ from torch.utils.tensorboard import SummaryWriter
 
 
 
-def prepare_train_eval(local_rank, gpus_per_node, world_size, run_name, train_config, model_config, hdf5_path_train):
-    cfgs = dict2clsattr(train_config, model_config)
-
-    assert cfgs.bn_stat_OnTheFly*cfgs.standing_statistics == 0,\
-    "You can't turn on train_statistics and standing_statistics simultaneously."
-    if cfgs.train_configs['train']*cfgs.standing_statistics:
-        print("When training, StudioGAN does not apply standing_statistics for evaluation. "+\
-              "After training is done, StudioGAN will accumulate batchnorm statistics and evaluate the trained model")
-
+def prepare_train_eval(local_rank, gpus_per_node, world_size, run_name, train_configs, model_configs, hdf5_path_train):
+    cfgs = dict2clsattr(train_configs, model_configs)
     prev_ada_p, step, best_step, best_fid, best_fid_checkpoint_path, mu, sigma, inception_model = None, 0, 0, None, None, None, None, None
 
     if cfgs.distributed_data_parallel:
@@ -53,8 +48,8 @@ def prepare_train_eval(local_rank, gpus_per_node, world_size, run_name, train_co
     if local_rank == 0:
         logger = make_logger(run_name, None)
         logger.info('Run name : {run_name}'.format(run_name=run_name))
-        logger.info(train_config)
-        logger.info(model_config)
+        logger.info(json.dumps(train_configs, indent=2))
+        logger.info(json.dumps(model_configs, indent=2))
     else:
         logger = None
 
@@ -154,8 +149,9 @@ def prepare_train_eval(local_rank, gpus_per_node, world_size, run_name, train_co
             Gen_ema.source, Gen_ema.target = Gen, Gen_copy
 
         writer = SummaryWriter(log_dir=join('./logs', run_name)) if global_rank == 0 else None
-        if cfgs.train_configs['train']:
-            assert cfgs.seed == trained_seed, "Seed for sampling random numbers should be same!"
+        if cfgs.train_configs['train'] and cfgs.seed != trained_seed:
+            cfgs.seed = trained_seed
+            fix_all_seed(cfgs.seed) 
 
         if local_rank == 0: logger.info('Generator checkpoint is {}'.format(g_checkpoint_dir))
         if local_rank == 0: logger.info('Discriminator checkpoint is {}'.format(d_checkpoint_dir))
@@ -256,16 +252,15 @@ def prepare_train_eval(local_rank, gpus_per_node, world_size, run_name, train_co
         worker.run_nearest_neighbor(nrow=cfgs.nrow, ncol=cfgs.ncol, standing_statistics=cfgs.standing_statistics, standing_step=cfgs.standing_step)
 
     if cfgs.interpolation:
-        assert cfgs.architecture in ["big_resnet", "biggan_deep"], "StudioGAN does not support interpolation analysis except for biggan and biggan_deep."
         worker.run_linear_interpolation(nrow=cfgs.nrow, ncol=cfgs.ncol, fix_z=True, fix_y=False,
                                         standing_statistics=cfgs.standing_statistics, standing_step=cfgs.standing_step)
         worker.run_linear_interpolation(nrow=cfgs.nrow, ncol=cfgs.ncol, fix_z=False, fix_y=True,
                                         standing_statistics=cfgs.standing_statistics, standing_step=cfgs.standing_step)
 
     if cfgs.frequency_analysis:
-        worker.run_frequency_analysis(num_images=len(train_dataset)//cfgs.num_classes,
+        worker.run_frequency_analysis(num_images=len(train_dataset),
                                       standing_statistics=cfgs.standing_statistics, standing_step=cfgs.standing_step)
 
     if cfgs.tsne_analysis:
-        worker.run_tsne(dataloader = eval_dataloader,
+        worker.run_tsne(dataloader=eval_dataloader,
                         standing_statistics=cfgs.standing_statistics, standing_step=cfgs.standing_step)
