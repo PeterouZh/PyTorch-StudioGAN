@@ -70,6 +70,9 @@ def main():
     parser.add_argument('--print_every', type=int, default=100, help='control log interval')
     parser.add_argument('--save_every', type=int, default=2000, help='control evaluation and save interval')
     parser.add_argument('--eval_type', type=str, default='test', help='[train/valid/test]')
+
+    from template_lib.v2.config_cfgnode import update_parser_defaults_from_yaml, global_cfg
+    update_parser_defaults_from_yaml(parser=parser)
     args = parser.parse_args()
 
     if not args.train and \
